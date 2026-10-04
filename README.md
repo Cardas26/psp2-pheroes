@@ -40,11 +40,11 @@ so Castles and Battlefield don't have to be silent.
 ## Install
 
 - Download `palmheroes.vpk` from the [latest release](../../releases/latest) and install it with VitaShell.
-- For music, copy this repository's `data/palmheroes/` folder to `ux0:/data/` (see Music section below).
+- For music, download `palmheroes-music.zip` from the same release and extract it to `ux0:/data/`: it creates `ux0:/data/palmheroes/Music/` (see Music section below).
 
 ## Music
 
-- **Original:** the 11 tracks Palm Heroes names for its terrains, by Kevin MacLeod (CC-BY 4.0), in this repository's `data/palmheroes/Music/Original/`; copied to `ux0:/data/palmheroes/Music/Original/` with the folder. The default.
+- **Original:** the 11 tracks Palm Heroes names for its terrains, by Kevin MacLeod (CC-BY 4.0), in `palmheroes-music.zip` (also this repository's `data/palmheroes/`); they end up in `ux0:/data/palmheroes/Music/Original/`. The default.
 - **HoMM2:** put your own Heroes of Might and Magic II soundtrack in `ux0:/data/palmheroes/Music/HoMM2/`, named as its `README.txt` lists (GOG release). It adds town, battle and result themes.
 - **None:** the game's own sounds only, as on Windows Mobile.
 
