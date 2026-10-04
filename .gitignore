@@ -1,0 +1,10 @@
+/game/
+*.zip
+loader/build*/
+*.velf
+*.self
+*.vpk
+*.sfo
+*.psp2dmp
+__pycache__/
+.DS_Store

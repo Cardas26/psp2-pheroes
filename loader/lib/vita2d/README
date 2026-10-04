@@ -1,0 +1,1 @@
+vita2d core from https://github.com/xerpi/libvita2d at a8f15ab (2021-11-26), MIT (LICENSE): vita2d.c, vita2d_texture.c, vita2d_draw.c, utils.c, their headers and the precompiled shaders; the image and font loaders are left out.

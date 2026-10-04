@@ -1,0 +1,7 @@
+* text=auto
+*.png binary
+*.gxp binary
+*.o binary
+*.mp3 binary
+loader/lib/** linguist-vendored
+loader/livearea/template.xml -text

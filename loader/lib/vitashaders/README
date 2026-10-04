@@ -1,0 +1,5 @@
+Precompiled shaders for win.c's shader modes: the bytes of <name>_v/<name>_f in libvitashaders.a from
+https://github.com/frangarcj/vita-shader-collection release master-0.1-v86 (its objects are hard-float, so
+the bytes are taken out and shaders.S includes them).
+lcd3x_v.gxp, lcd3x_f.gxp: LCD3x, Gigaherz, public domain. Uniforms: wvp, IN.texture_size (vertex).
+fxaa_v.gxp, fxaa_f.gxp: FXAA, Armin Ronacher (webgl-meincraft), BSD 3-clause. Uniforms: wvp, IN.video_size; no aTexcoord.
