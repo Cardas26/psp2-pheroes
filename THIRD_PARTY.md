@@ -7,6 +7,12 @@
 | `loader/lib/vita2d` | [xerpi/libvita2d](https://github.com/xerpi/libvita2d) at `a8f15ab`: the core and its precompiled shaders | MIT (`LICENSE`) | none; the image and font loaders left out |
 | `loader/lib/vitashaders` | [frangarcj/vita-shader-collection](https://github.com/frangarcj/vita-shader-collection) release `master-0.1-v86`: the compiled LCD3x and FXAA shaders | LCD3x: public domain (Gigaherz). FXAA: BSD 3-clause, below | none; `shaders.S` includes the bytes |
 
+## Libraries linked from the toolchain
+
+| Library | Source | Licence | How it is used |
+|---|---|---|---|
+| mpg123 1.33.4 | [mpg123.de](https://www.mpg123.de/), the vitasdk `mpg123` package (`Containerfile`) | LGPL 2.1 | statically linked into `eboot.bin`; plays the music. This repository at each release tag is the complete source of the application, so a modified mpg123 can be linked in by rebuilding |
+
 ### FXAA (`loader/lib/vitashaders/fxaa_*.gxp`)
 
 ```
