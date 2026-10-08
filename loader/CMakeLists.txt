@@ -47,7 +47,7 @@ add_executable(palmheroes
     music.c
     natives.S
     lib/vitashaders/shaders.S
-    lib/vshot/vshot.c
+    lib/keymap/keymap.c
 )
 target_compile_definitions(palmheroes PRIVATE PHEROES_BUILD_ID="${PHEROES_BUILD_ID} ${_profile}")
 if(DIAGNOSTICS)

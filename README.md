@@ -28,7 +28,7 @@ and added it.
 - Palm Heroes shares DNA with several other HoMM titles, mostly HoMM2. Terrain and 
 factions map almost 1 on 1. Decided to add support for optional HoMM2 music as well, 
 so Castles and Battlefield don't have to be silent.
-- Added support for several upscalers, defaulting to "Sharp".
+- Added several views (4:3, 2x and Wide) and filters, defaulting to 4:3 and "Sharp".
 - Ideas for further enhancements are welcome. 
 
 ## Requirements
@@ -40,11 +40,11 @@ so Castles and Battlefield don't have to be silent.
 ## Install
 
 - Download `palmheroes.vpk` from the [latest release](../../releases/latest) and install it with VitaShell.
-- For music, download `palmheroes-music.zip` from the same release and extract it to `ux0:/data/`: it creates `ux0:/data/palmheroes/Music/` (see Music section below).
+- For music, download `music.zip` from the same release and extract it to `ux0:/data/`: it creates `ux0:/data/palmheroes/Music/` (see Music section below).
 
 ## Music
 
-- **Original:** the 11 tracks Palm Heroes names for its terrains, by Kevin MacLeod (CC-BY 4.0), in `palmheroes-music.zip` (also this repository's `data/palmheroes/`); they end up in `ux0:/data/palmheroes/Music/Original/`. The default.
+- **Original:** the 11 tracks Palm Heroes names for its terrains, by Kevin MacLeod (CC-BY 4.0), in `music.zip` (also this repository's `data/palmheroes/`); they end up in `ux0:/data/palmheroes/Music/Original/`. The default.
 - **HoMM2:** put your own Heroes of Might and Magic II soundtrack in `ux0:/data/palmheroes/Music/HoMM2/`, named as its `README.txt` lists (GOG release). It adds town, battle and result themes.
 - **None:** the game's own sounds only, as on Windows Mobile.
 
@@ -56,25 +56,28 @@ Install the new VPK over the old one. Saves and settings stay.
 
 ## Controls
 
+The defaults are below; remap any of them in `ux0:/data/palmheroes/controls.ini`.
+
 | Input | Action |
 |---|---|
 | Touch | The stylus |
 | D-pad, left stick | Scroll the map |
 | Cross | Enter |
 | Square | Hold and touch screen to move the map by touch |
-| Triangle | Zoomed out map view. Use D-pad and left stick to scroll |
-| Circle | Close the melee attack ring; otherwise unused (it minimized the game on Windows Mobile) |
+| Circle | Hold for the zoomed out map view; D-pad and left stick scroll it. Also closes the melee attack ring |
 | L | The game's E key: assign it in the in-game Key Map |
 | Right stick, R | Move the cursor; R shows it, then taps the stylus at it |
 | Start | Show or hide outlines around monsters and pickups |
-| Circle + L | Next screen scaling: sharp bilinear, nearest, 2x, LCD3x, FXAA |
-| Circle + R | 60 or 30 frames per second |
-| Circle + Start | Melee aiming: ring tap, ring drag or original |
-| Circle + Select | Music: Original, HoMM2 or none |
+| Triangle + L | Next view: 4:3, 2x, Wide |
+| Triangle + R | Next filter: Sharp, Pixel, Soft, LCD, FXAA |
+| Triangle + Up | 60 or 30 frames per second |
+| Triangle + Start | Melee aiming: ring tap, ring drag or original |
+| Triangle + Select | Music: Original, HoMM2 or none |
 
 ## Settings
 
-`ux0:/data/palmheroes/settings.txt` keeps the scaling, frame rate, melee aiming and music choices. The game writes it on first start; edit it with the game closed.
+`ux0:/data/palmheroes/settings.txt` keeps the view, filter, frame rate, melee aiming and music choices. The game writes it on first start; edit it with the game closed.
+`ux0:/data/palmheroes/controls.ini` holds the button mapping; delete it to get the defaults back.
 
 ## Report a bug
 

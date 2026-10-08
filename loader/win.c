@@ -92,7 +92,7 @@ static int ss_valid;
 static int mb_valid;
 static uint32_t *cycle_delay;
 static volatile int fps30;
-static volatile unsigned fps_asked, scale_asked;
+static volatile unsigned fps_asked, filter_asked, view_asked;
 
 void win_set_cycle(uint32_t *d) { cycle_delay = d; }
 
@@ -109,7 +109,7 @@ static volatile unsigned ring_seq;
 static uint8_t *ring_bv;
 static volatile unsigned music_asked;
 static const char *const music_keys[MUSIC_SETS] = {"none", "original", "homm2"};
-static const char *const music_labels[MUSIC_SETS] = {"NO MUSIC", "ORIGINAL MUSIC", "HOMM2 MUSIC"};
+static const char *const music_labels[MUSIC_SETS] = {"none", "original", "HoMM2"};
 
 static volatile int outlines_on;
 static volatile int outline_redraw;
@@ -117,7 +117,7 @@ static volatile unsigned outline_asked;
 
 enum { MELEE_ORIGINAL, MELEE_RING_TAP, MELEE_RING_DRAG, MELEE_MODES };
 static const char *const melee_keys[MELEE_MODES] = {"original", "ring_tap", "ring_drag"};
-static const char *const melee_labels[MELEE_MODES] = {"ORIGINAL", "RING TAP", "RING DRAG"};
+static const char *const melee_labels[MELEE_MODES] = {"original", "ring tap", "ring drag"};
 static volatile int melee_mode = MELEE_RING_TAP;
 static volatile unsigned melee_asked;
 static uint32_t ring_gfx, ring_blit, ring_surface;
@@ -1247,9 +1247,13 @@ static uint16_t *guest_fb;
 static int portrait;
 static unsigned presents;
 
-enum { SCALE_NEAREST, SCALE_2X, SCALE_SHARP, SCALE_LCD3X, SCALE_FXAA, SCALE_MODES };
-static const char *const scale_names[SCALE_MODES] = {"nearest", "2x", "sharp", "lcd3x", "fxaa"};
-static int scale_mode = SCALE_SHARP;
+enum { VIEW_43, VIEW_2X, VIEW_WIDE, VIEW_MODES };
+static const char *const view_names[VIEW_MODES] = {"4:3", "2x", "Wide"};
+static const char *const view_keys[VIEW_MODES] = {"4:3", "2x", "wide"};
+enum { FILTER_SHARP, FILTER_PIXEL, FILTER_SOFT, FILTER_LCD, FILTER_FXAA, FILTER_MODES };
+static const char *const filter_names[FILTER_MODES] = {"Sharp", "Pixel", "Soft", "LCD", "FXAA"};
+static const char *const filter_keys[FILTER_MODES] = {"sharp", "pixel", "soft", "lcd", "fxaa"};
+static int view_mode = VIEW_43, filter_mode = FILTER_SHARP;
 static int disp_x = DISP_X, disp_y = 0, disp_w = DISP_W, disp_h = VITA_H;
 static unsigned frame_us;
 
@@ -1262,19 +1266,25 @@ static int redraw;
 
 static void settings_load(void);
 static void settings_save(void);
+#include "lib/keymap/keymap.h"
+static struct km_map pad_map;
 
-static void set_scale(int mode)
+static void set_view(int mode)
 {
-    scale_mode = mode;
+    view_mode = mode;
     redraw = 1;
-    if (mode == SCALE_2X) {
-        disp_w = UP_W * 2; disp_h = UP_H * 2;
-    } else {
-        disp_w = DISP_W; disp_h = VITA_H;
-    }
+    disp_w = mode == VIEW_2X ? UP_W * 2 : mode == VIEW_WIDE ? VITA_W : DISP_W;
+    disp_h = mode == VIEW_2X ? UP_H * 2 : VITA_H;
     disp_x = (VITA_W - disp_w) / 2;
     disp_y = (VITA_H - disp_h) / 2;
-    say("disp  scale %s %dx%d at %d,%d\n", scale_names[mode], disp_w, disp_h, disp_x, disp_y);
+    say("disp  view %s %dx%d at %d,%d\n", view_names[mode], disp_w, disp_h, disp_x, disp_y);
+}
+
+static void set_filter(int mode)
+{
+    filter_mode = mode;
+    redraw = 1;
+    say("disp  filter %s\n", filter_names[mode]);
 }
 
 static void draw_panel(float x, float y, float w, float h)
@@ -1294,8 +1304,8 @@ static struct shader {
     SceGxmFragmentProgram *fp;
     const SceGxmProgramParameter *wvp, *vsize, *fsize;
 } shaders[] = {
-    {.mode = SCALE_LCD3X, .v = &lcd3x_v, .f = &lcd3x_f, .size_name = "IN.texture_size"},
-    {.mode = SCALE_FXAA, .v = &fxaa_v, .f = &fxaa_f, .size_name = "IN.video_size", .post = 1},
+    {.mode = FILTER_LCD, .v = &lcd3x_v, .f = &lcd3x_f, .size_name = "IN.texture_size"},
+    {.mode = FILTER_FXAA, .v = &fxaa_v, .f = &fxaa_f, .size_name = "IN.video_size", .post = 1},
 };
 #define N_SHADERS (sizeof(shaders) / sizeof(shaders[0]))
 
@@ -1341,7 +1351,7 @@ static void shader_init(struct shader *sh)
                                                      SCE_GXM_MULTISAMPLE_NONE, NULL, sh->v, &sh->fp);
     if (r)
         sh->vp = NULL, sh->fp = NULL;
-    say("disp  %s programs 0x%08x vp=%p fp=%p size=%p/%p\n", scale_names[sh->mode], (unsigned)r, sh->vp, sh->fp,
+    say("disp  %s programs 0x%08x vp=%p fp=%p size=%p/%p\n", filter_names[sh->mode], (unsigned)r, sh->vp, sh->fp,
         sh->vsize, sh->fsize);
 }
 
@@ -1382,34 +1392,55 @@ static void draw_shader(const struct shader *sh, float x, float y, float w, floa
     sceGxmDraw(ctx, SCE_GXM_PRIMITIVE_TRIANGLE_STRIP, SCE_GXM_INDEX_FORMAT_U16, vita2d_get_linear_indices(), 4);
 }
 
+#include "lib/osd_font.h"
 static uint64_t label_until;
-static const char *label_text;
-static const struct { char c; uint8_t rows[7]; } glyphs[] = {
-    {'0', {0x0e, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0e}}, {'6', {0x06, 0x08, 0x10, 0x1e, 0x11, 0x11, 0x0e}},
-    {'2', {0x0e, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1f}}, {'3', {0x1f, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0e}}, {'A', {0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}},
-    {'B', {0x1e, 0x11, 0x11, 0x1e, 0x11, 0x11, 0x1e}}, {'C', {0x0e, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0e}},
-    {'D', {0x1e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1e}}, {'E', {0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x1f}},
-    {'F', {0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x10}}, {'H', {0x11, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}},
-    {'L', {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1f}}, {'N', {0x11, 0x19, 0x19, 0x15, 0x13, 0x13, 0x11}},
-    {'P', {0x1e, 0x11, 0x11, 0x1e, 0x10, 0x10, 0x10}}, {'R', {0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11}},
-    {'S', {0x0f, 0x10, 0x10, 0x0e, 0x01, 0x01, 0x1e}}, {'T', {0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}},
-    {'X', {0x11, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x11}}, {'G', {0x0e, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0f}},
-    {'I', {0x0e, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0e}}, {'O', {0x0e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e}},
-    {'U', {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e}}, {'M', {0x11, 0x1b, 0x15, 0x15, 0x11, 0x11, 0x11}},
-};
+static char label_text[96];
+static int label_used;
+static vita2d_texture *osd_tex;
 
-static void draw_label(const char *s)
+static void osd_show(const char *text, unsigned ms)
 {
-    enum { DOT = 4, X0 = 16, Y0 = 16 };
-    int n = strlen(s);
-    vita2d_draw_rectangle(X0 - 2 * DOT, Y0 - 2 * DOT, (n * 6 + 3) * DOT, 11 * DOT, 0xC0000000);
-    for (int k = 0; k < n; k++)
-        for (unsigned g = 0; g < sizeof(glyphs) / sizeof(glyphs[0]); g++)
-            if (glyphs[g].c == toupper((unsigned char)s[k]))
-                for (int r = 0; r < 7; r++)
-                    for (int c = 0; c < 5; c++)
-                        if (glyphs[g].rows[r] & (0x10 >> c))
-                            vita2d_draw_rectangle(X0 + (k * 6 + c) * DOT, Y0 + r * DOT, DOT, DOT, 0xFFFFFFFF);
+    snprintf(label_text, sizeof(label_text), "%s", text);
+    label_until = sceKernelGetProcessTimeWide() + ms * 1000ull;
+    label_used = -1;
+    redraw = 1;
+    say("osd   %s\n", label_text);
+}
+
+static void osd_say(const char *what, const char *name)
+{
+    char t[96];
+    snprintf(t, sizeof(t), "%s: %s", what, name);
+    osd_show(t, 3000);
+}
+
+static void osd_draw(void)
+{
+    if (!osd_tex)
+        return;
+    if (label_used < 0) {
+        static uint32_t px[OSD_W * OSD_H];
+        label_used = osd_raster(label_text, px, OSD_W, OSD_H);
+        uint8_t *d = vita2d_texture_get_datap(osd_tex);
+        unsigned stride = vita2d_texture_get_stride(osd_tex);
+        for (int y = 0; y < OSD_H; y++)
+            memcpy(d + y * stride, px + y * OSD_W, OSD_W * 4);
+    }
+    if (label_used > 0)
+        vita2d_draw_texture_part_scale(osd_tex, 8, 8, 0, 0, label_used, OSD_H, 2, 2);
+}
+
+static void controls_osd(void)
+{
+    static int shown;
+    static uint64_t next;
+    char t[96];
+    uint64_t now = sceKernelGetProcessTimeWide();
+    if (!presents || (shown && now < next) || !km_note(&pad_map, shown, t, sizeof(t)))
+        return;
+    osd_show(t, 4000);
+    next = now + 4000000;
+    shown++;
 }
 
 static volatile float cursor_x = UP_W / 2, cursor_y = UP_H / 2;
@@ -1720,8 +1751,10 @@ static void draw(const uint16_t *src_fb)
     ring_textures();
     memcpy(vita2d_texture_get_datap(tex), src_fb, FB_W * FB_H * 2);
     vita2d_pool_reset();
-    const struct shader *sh = shader_for(scale_mode);
-    if (scale_mode == SCALE_SHARP)
+    const struct shader *sh = shader_for(filter_mode);
+    SceGxmTextureFilter tf = filter_mode == FILTER_SOFT ? SCE_GXM_TEXTURE_FILTER_LINEAR : SCE_GXM_TEXTURE_FILTER_POINT;
+    vita2d_texture_set_filters(tex, tf, tf);
+    if (filter_mode == FILTER_SHARP)
         draw_upright(0, 0, UP_W * 2, UP_H * 2, SCE_GXM_TEXTURE_FILTER_LINEAR);
     else if (sh && sh->post)
         draw_upright(disp_x, disp_y, disp_w, disp_h, SCE_GXM_TEXTURE_FILTER_LINEAR);
@@ -1729,7 +1762,7 @@ static void draw(const uint16_t *src_fb)
         draw_upright(0, 0, UP_W, UP_H, SCE_GXM_TEXTURE_FILTER_POINT);
     vita2d_start_drawing_advanced(NULL, 0);
     vita2d_clear_screen();
-    if (scale_mode == SCALE_SHARP)
+    if (filter_mode == FILTER_SHARP)
         vita2d_draw_texture_part_scale(twice, disp_x, disp_y, 0, 0, UP_W * 2, UP_H * 2,
                                        (float)disp_w / (UP_W * 2), (float)disp_h / (UP_H * 2));
     else if (sh && sh->post)
@@ -1745,8 +1778,8 @@ static void draw(const uint16_t *src_fb)
     }
     if (cursor_shown && !cursor_veiled)
         draw_cursor();
-    if (label_until && label_text)
-        draw_label(label_text);
+    if (label_until)
+        osd_draw();
     vita2d_end_drawing();
     vita2d_swap_buffers();
 }
@@ -1764,7 +1797,7 @@ static int display_thread(SceSize args, void *argp)
 {
     (void)args; (void)argp;
     uint32_t held = 0;
-    unsigned fps_done = 0, scale_done = 0;
+    unsigned fps_done = 0, filter_done = 0, view_done = 0;
     unsigned still = 0;
     static uint16_t shadow[FB_W * FB_H] __attribute__((aligned(64)));
     for (;;) {
@@ -1791,6 +1824,7 @@ static int display_thread(SceSize args, void *argp)
             label_until = 0;
             redraw = 1;
         }
+        controls_osd();
         static unsigned ring_drawn;
         if (ring_seq != ring_drawn) {
             ring_drawn = ring_seq;
@@ -1825,42 +1859,39 @@ static int display_thread(SceSize args, void *argp)
             if (fps_asked != fps_done) {
                 fps_done = fps_asked;
                 fps30 = !fps30;
-                label_text = fps30 ? "30 FPS" : "60 FPS";
-                label_until = sceKernelGetProcessTimeWide() + 3000000;
-                redraw = 1;
+                osd_say("FPS", fps30 ? "30" : "60");
                 settings_save();
             }
             static unsigned outline_done;
             if (outline_asked != outline_done) {
                 outline_done = outline_asked;
-                label_text = outlines_on ? "OUTLINES ON" : "OUTLINES OFF";
-                label_until = sceKernelGetProcessTimeWide() + 3000000;
-                redraw = 1;
+                osd_say("Outlines", outlines_on ? "on" : "off");
             }
             static unsigned music_done;
             if (music_asked != music_done) {
                 music_done = music_asked;
-                label_text = music_labels[music_set()];
-                label_until = sceKernelGetProcessTimeWide() + 3000000;
-                redraw = 1;
+                osd_say("Music", music_labels[music_set()]);
                 settings_save();
             }
             static unsigned melee_done;
             if (melee_asked != melee_done) {
                 melee_done = melee_asked;
-                label_text = melee_labels[melee_mode];
-                label_until = sceKernelGetProcessTimeWide() + 3000000;
-                redraw = 1;
+                osd_say("Melee", melee_labels[melee_mode]);
                 settings_save();
             }
-            if (scale_asked != scale_done) {
-                scale_done = scale_asked;
-                int mode = (scale_mode + 1) % SCALE_MODES;
-                while (mode > SCALE_SHARP && !shader_for(mode))
-                    mode = (mode + 1) % SCALE_MODES;
-                set_scale(mode);
-                label_text = scale_names[scale_mode];
-                label_until = sceKernelGetProcessTimeWide() + 3000000;
+            if (filter_asked != filter_done) {
+                filter_done = filter_asked;
+                int mode = (filter_mode + 1) % FILTER_MODES;
+                while (mode >= FILTER_LCD && !shader_for(mode))
+                    mode = (mode + 1) % FILTER_MODES;
+                set_filter(mode);
+                osd_say("Filter", filter_names[filter_mode]);
+                settings_save();
+            }
+            if (view_asked != view_done) {
+                view_done = view_asked;
+                set_view((view_mode + 1) % VIEW_MODES);
+                osd_say("View", view_names[view_mode]);
                 settings_save();
             }
             held = pad.buttons;
@@ -1883,6 +1914,10 @@ static int display_start(void)
         for (unsigned i = 0; i < N_SHADERS; i++)
             shader_init(&shaders[i]);
         settings_load();
+        km_load(&pad_map);
+        osd_tex = vita2d_create_empty_texture_format(OSD_W, OSD_H, SCE_GXM_TEXTURE_FORMAT_A8B8G8R8);
+        if (osd_tex)
+            vita2d_texture_set_filters(osd_tex, SCE_GXM_TEXTURE_FILTER_POINT, SCE_GXM_TEXTURE_FILTER_POINT);
         vita2d_texture_set_filters(tex, SCE_GXM_TEXTURE_FILTER_POINT, SCE_GXM_TEXTURE_FILTER_POINT);
         SceUID th = sceKernelCreateThread("ph-display", display_thread, 0x10000100, 0x10000, 0, 0, NULL);
         sceKernelStartThread(th, 0, NULL);
@@ -2265,12 +2300,36 @@ static void touch_poll_now(void)
     touch_at = at;
 }
 
-static const struct { uint32_t button, vk; } keymap[] = {
-    {SCE_CTRL_UP, 0x25}, {SCE_CTRL_RIGHT, 0x26}, {SCE_CTRL_DOWN, 0x27}, {SCE_CTRL_LEFT, 0x28},
-    {SCE_CTRL_CROSS, 0x0D}, {SCE_CTRL_SQUARE, 0xC1}, {SCE_CTRL_TRIANGLE, 0xC2}, {SCE_CTRL_CIRCLE, 0xC3},
-    {SCE_CTRL_START, 0xC4}, {SCE_CTRL_LTRIGGER, 0xC5},
+enum { PA_UP, PA_DOWN, PA_LEFT, PA_RIGHT, PA_ENTER, PA_KEYA, PA_KEYB, PA_KEYC, PA_KEYD, PA_KEYE,
+       PA_CURSOR, PA_STYLUS, PA_CANCEL_RING, PA_OUTLINES, PA_VIEW, PA_FILTER, PA_FPS, PA_MELEE, PA_MUSIC, PA_N };
+static const uint32_t pad_vk[PA_KEYE + 1] = {0x25, 0x27, 0x28, 0x26, 0x0D, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5};
+static const struct km_act pad_acts[PA_N] = {
+    {"Up", "Up, LStickUp", "the game's up: scrolls the map", KM_BUTTONS, 2, 0},
+    {"Down", "Down, LStickDown", "the game's down", KM_BUTTONS, 2, 0},
+    {"Left", "Left, LStickLeft", "the game's left", KM_BUTTONS, 2, 0},
+    {"Right", "Right, LStickRight", "the game's right", KM_BUTTONS, 2, 0},
+    {"Enter", "Cross", "the game's Enter key: help mode (its Settings > Key Map)", KM_BUTTONS, 0, 0},
+    {"KeyA", "Square", "the game's A key: hand mode (Key Map)", KM_BUTTONS, 0, 0},
+    {"KeyB", "Circle", "the game's B key: the survey map while held (Key Map)", KM_BUTTONS, 0, 0},
+    {"KeyC", "None", "the game's C key: minimize (Key Map), nothing on the Vita", KM_BUTTONS, 0, 0},
+    {"KeyD", "None", "the game's D key: free for its Key Map", KM_BUTTONS, 0, 0},
+    {"KeyE", "L", "the game's E key: free for its Key Map", KM_BUTTONS, 0, 0},
+    {"Cursor", "RStick", "the stick that moves the cursor", KM_STICK, 0, 0},
+    {"Stylus", "R", "a touch at the cursor, a drag while held (the first press shows it)", KM_BUTTONS, 0, 0},
+    {"CancelRing", "Circle", "close the attack ring", KM_BUTTONS, 0, 1},
+    {"Outlines", "Start", "map object outlines on or off", KM_BUTTONS, 0, 0},
+    {"View", "Triangle+L", "the next view: 4:3, 2x, Wide", KM_BUTTONS, 0, 0},
+    {"Filter", "Triangle+R", "the next filter: Sharp, Pixel, Soft, LCD, FXAA", KM_BUTTONS, 0, 0},
+    {"FPS", "Triangle+Up", "60 or 30 frames a second", KM_BUTTONS, 0, 0},
+    {"Melee", "Triangle+Start", "the next melee control: original, ring tap, ring drag", KM_BUTTONS, 0, 0},
+    {"Music", "Triangle+Select", "the next music set: none, original, HoMM2", KM_BUTTONS, 0, 0},
 };
-static uint32_t buttons_held;
+static void pad_log(const char *line) { say("%s\n", line); }
+static struct km_map pad_map = {
+    .path = DATA_DIR "/controls.ini", .aside = DATA_DIR "/controls-unreadable.ini", .title = "Palm Heroes",
+    .header = "; Touch is not a button: it always taps where it lands.\n",
+    .acts = pad_acts, .n_acts = PA_N, .avail = (1u << KM_N) - 1, .log = pad_log,
+};
 static unsigned key_downs;
 
 #define STICK_DEAD 48
@@ -2282,10 +2341,22 @@ static uint32_t stick_dirs(int x, int y)
         return 0;
     uint32_t dirs = 0;
     if (ax * 5 >= ay * 2)
-        dirs |= dx < 0 ? SCE_CTRL_LEFT : SCE_CTRL_RIGHT;
+        dirs |= dx < 0 ? 4 : 8;
     if (ay * 5 >= ax * 2)
-        dirs |= dy < 0 ? SCE_CTRL_UP : SCE_CTRL_DOWN;
+        dirs |= dy < 0 ? 1 : 2;
     return dirs;
+}
+
+static uint32_t pad_bits(const SceCtrlData *pad)
+{
+    static const uint32_t sce[KM_SELECT + 1] = {
+        SCE_CTRL_UP, SCE_CTRL_DOWN, SCE_CTRL_LEFT, SCE_CTRL_RIGHT, SCE_CTRL_CROSS, SCE_CTRL_CIRCLE, SCE_CTRL_SQUARE,
+        SCE_CTRL_TRIANGLE, SCE_CTRL_LTRIGGER, SCE_CTRL_RTRIGGER, SCE_CTRL_START, SCE_CTRL_SELECT};
+    uint32_t on = 0;
+    for (int i = 0; i <= KM_SELECT; i++)
+        if (pad->buttons & sce[i])
+            on |= 1u << i;
+    return on | stick_dirs(pad->rx, pad->ry) << KM_RS_UP | stick_dirs(pad->lx, pad->ly) << KM_LS_UP;
 }
 
 #define CURSOR_DEAD 32
@@ -2293,17 +2364,19 @@ static uint32_t stick_dirs(int x, int y)
 static uint32_t cursor_at;
 static unsigned cursor_downs, cursor_moves;
 
-static void cursor_poll(const SceCtrlData *pad)
+static void cursor_poll(const SceCtrlData *pad, int stylus)
 {
     static uint64_t last;
-    static uint32_t r_was;
+    static int r_was;
     uint64_t now = sceKernelGetProcessTimeWide();
     float dt = last ? (now - last) / 1e6f : 0;
     last = now;
     if (dt > 0.05f)
         dt = 0.05f;
-    float dx = pad->rx - 128, dy = pad->ry - 128, d = sqrtf(dx * dx + dy * dy);
-    if (d > CURSOR_DEAD) {
+    int stick = pad_map.bind[PA_CURSOR].stick;
+    float dx = (stick == KM_LSTICK ? pad->lx : pad->rx) - 128, dy = (stick == KM_LSTICK ? pad->ly : pad->ry) - 128;
+    float d = sqrtf(dx * dx + dy * dy);
+    if (stick && d > CURSOR_DEAD) {
         float n = (d - CURSOR_DEAD) / (127 - CURSOR_DEAD);
         n = n > 1 ? 1 : n;
         float step = CURSOR_SPEED * n * n * dt / d;
@@ -2315,7 +2388,7 @@ static void cursor_poll(const SceCtrlData *pad)
     }
     int X = (int)cursor_x, Y = (int)cursor_y;
     uint32_t at = (uint32_t)(FB_H - 1 - X) << 16 | (uint32_t)Y;
-    uint32_t r = pad->buttons & SCE_CTRL_RTRIGGER;
+    int r = stylus;
     if (cursor_veiled)
         r = r_was = 0;
     if (r && !r_was && !touch_held && rm == RM_OFF) {
@@ -2345,68 +2418,67 @@ static void buttons_poll(void)
     SceCtrlData pad;
     if (sceCtrlPeekBufferPositive(0, &pad, 1) < 1)
         return;
-    static uint32_t raw_held, swallowed;
-    uint32_t raw = pad.buttons, pressed = raw & ~raw_held;
-    if ((pressed & SCE_CTRL_CIRCLE) && (rm == RM_OPEN || rm == RM_DRAG)) {
-        int held = touch_held;
-        ring_close(-1, "cancel circle");
-        if (held)
-            rm = RM_EAT;
-    }
-    if ((pressed & SCE_CTRL_START) && !(raw & SCE_CTRL_CIRCLE)) {
-        outlines_on = !outlines_on;
-        outline_redraw = 1;
-        outline_asked++;
-        say("start: outlines %s\n", outlines_on ? "on" : "off");
-    }
-    swallowed |= raw & SCE_CTRL_START;
 #ifdef DIAGNOSTICS
+    uint32_t raw = pad.buttons;
+    static uint32_t shot_kept;
     if ((raw & VSHOT_COMBO) == VSHOT_COMBO)
-        swallowed |= VSHOT_COMBO;
+        shot_kept |= VSHOT_COMBO;
+    shot_kept &= raw;
+    pad.buttons = raw & ~shot_kept;
     if (!!(raw & SCE_CTRL_LTRIGGER) != cursor_veiled) {
         cursor_veiled = !!(raw & SCE_CTRL_LTRIGGER);
         redraw = 1;
     }
 #endif
-    if (raw & SCE_CTRL_CIRCLE) {
-        if (pressed & SCE_CTRL_LTRIGGER) {
-            say("combo Circle+L: scaler\n");
-            scale_asked++;
-            swallowed |= SCE_CTRL_LTRIGGER;
-        }
-        if (pressed & SCE_CTRL_RTRIGGER) {
-            say("combo Circle+R: fps\n");
-            fps_asked++;
-            swallowed |= SCE_CTRL_RTRIGGER;
-        }
-        if (pressed & SCE_CTRL_START) {
-            melee_mode = (melee_mode + 1) % MELEE_MODES;
-            say("combo Circle+Start: melee %s\n", melee_keys[melee_mode]);
-            melee_asked++;
-        }
-        if (pressed & SCE_CTRL_SELECT) {
-            music_choose((music_set() + 1) % MUSIC_SETS);
-            say("combo Circle+Select: music %s\n", music_keys[music_set()]);
-            music_asked++;
-        }
+    uint8_t hit[PA_N] = {0}, fire[PA_N] = {0};
+    km_eval(&pad_map, pad_bits(&pad), hit, fire);
+    if (fire[PA_CANCEL_RING] && (rm == RM_OPEN || rm == RM_DRAG)) {
+        int held = touch_held;
+        ring_close(-1, "cancel");
+        if (held)
+            rm = RM_EAT;
     }
-    swallowed &= raw;
-    raw_held = raw;
-    pad.buttons = raw & ~swallowed;
-    pad.buttons |= stick_dirs(pad.lx, pad.ly);
-    uint32_t changed = pad.buttons ^ buttons_held;
-    for (unsigned i = 0; i < sizeof(keymap) / sizeof(keymap[0]); i++) {
-        if (!(changed & keymap[i].button))
+    if (fire[PA_OUTLINES]) {
+        outlines_on = !outlines_on;
+        outline_redraw = 1;
+        outline_asked++;
+        say("pad   Outlines: %s\n", outlines_on ? "on" : "off");
+    }
+    if (fire[PA_VIEW]) {
+        say("pad   View\n");
+        view_asked++;
+    }
+    if (fire[PA_FILTER]) {
+        say("pad   Filter\n");
+        filter_asked++;
+    }
+    if (fire[PA_FPS]) {
+        say("pad   FPS\n");
+        fps_asked++;
+    }
+    if (fire[PA_MELEE]) {
+        melee_mode = (melee_mode + 1) % MELEE_MODES;
+        say("pad   Melee: %s\n", melee_keys[melee_mode]);
+        melee_asked++;
+    }
+    if (fire[PA_MUSIC]) {
+        music_choose((music_set() + 1) % MUSIC_SETS);
+        say("pad   Music: %s\n", music_keys[music_set()]);
+        music_asked++;
+    }
+    static uint8_t key_held[PA_KEYE + 1];
+    for (int a = 0; a <= PA_KEYE; a++) {
+        if (hit[a] == key_held[a])
             continue;
-        if (pad.buttons & keymap[i].button) {
-            post(HWND_MAIN, WM_KEYDOWN, keymap[i].vk, 1);
+        key_held[a] = hit[a];
+        if (hit[a]) {
+            post(HWND_MAIN, WM_KEYDOWN, pad_vk[a], 1);
             key_downs++;
         } else {
-            post(HWND_MAIN, WM_KEYUP, keymap[i].vk, 0xC0000001u);
+            post(HWND_MAIN, WM_KEYUP, pad_vk[a], 0xC0000001u);
         }
     }
-    buttons_held = pad.buttons;
-    cursor_poll(&pad);
+    cursor_poll(&pad, hit[PA_STYLUS]);
 }
 
 #define SETTINGS_PATH DATA_DIR "/settings.txt"
@@ -2465,10 +2537,23 @@ static void settings_load(void)
         *eq = 0;
         char *v = eq + 1;
         v[strcspn(v, "\r \t")] = 0;
-        if (!strcmp(line, "scaler")) {
-            for (int m = 0; m < SCALE_MODES; m++)
-                if (!strcmp(v, scale_names[m]) && (m <= SCALE_SHARP || shader_for(m)))
-                    set_scale(m);
+        if (!strcmp(line, "view")) {
+            for (int m = 0; m < VIEW_MODES; m++)
+                if (!strcmp(v, view_keys[m]))
+                    set_view(m);
+        } else if (!strcmp(line, "filter")) {
+            for (int m = 0; m < FILTER_MODES; m++)
+                if (!strcmp(v, filter_keys[m]) && (m < FILTER_LCD || shader_for(m)))
+                    set_filter(m);
+        } else if (!strcmp(line, "scaler")) {
+            static const struct { const char *old; int filter, view; } was[] = {
+                {"nearest", FILTER_PIXEL, VIEW_43}, {"2x", FILTER_PIXEL, VIEW_2X}, {"sharp", FILTER_SHARP, VIEW_43},
+                {"lcd3x", FILTER_LCD, VIEW_43}, {"fxaa", FILTER_FXAA, VIEW_43}};
+            for (unsigned i = 0; i < sizeof(was) / sizeof(was[0]); i++)
+                if (!strcmp(v, was[i].old) && (was[i].filter < FILTER_LCD || shader_for(was[i].filter))) {
+                    set_filter(was[i].filter);
+                    set_view(was[i].view);
+                }
         } else if (!strcmp(line, "fps")) {
             fps30 = !strcmp(v, "30");
         } else if (!strcmp(line, "melee")) {
@@ -2483,16 +2568,16 @@ static void settings_load(void)
             map_scroll_done = !strcmp(v, "done");
         }
     }
-    say("settings %s: scaler=%s fps=%d melee=%s\n", fd >= 0 ? "read" : "defaults", scale_names[scale_mode],
-        fps30 ? 30 : 60, melee_keys[melee_mode]);
+    say("settings %s: view=%s filter=%s fps=%d melee=%s\n", fd >= 0 ? "read" : "defaults", view_keys[view_mode],
+        filter_keys[filter_mode], fps30 ? 30 : 60, melee_keys[melee_mode]);
     settings_save();
 }
 
 static void settings_save(void)
 {
-    char buf[128];
-    int n = snprintf(buf, sizeof(buf), "scaler=%s\nfps=%d\nmelee=%s\nmusic=%s\n%s", scale_names[scale_mode],
-                     fps30 ? 30 : 60, melee_keys[melee_mode], music_keys[music_set()],
+    char buf[160];
+    int n = snprintf(buf, sizeof(buf), "view=%s\nfilter=%s\nfps=%d\nmelee=%s\nmusic=%s\n%s", view_keys[view_mode],
+                     filter_keys[filter_mode], fps30 ? 30 : 60, melee_keys[melee_mode], music_keys[music_set()],
                      map_scroll_done ? "map_scroll_once=done\n" : "");
     SceUID fd = sceIoOpen(SETTINGS_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
     if (fd >= 0) {
