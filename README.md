@@ -9,8 +9,8 @@ and was in a decent state. Decided to build a loader for that instead, and creat
 some general and touch specific enhancements (see below).
 
 ## What works
-- All main gameplay functionality, 4 maps tested from beginning to end. Please open 
-an issue if you encounter any bugs.
+- Singleplayer, 4 maps tested from beginning to end. Multiplayer is not supported at 
+this time.
 - The original game ran at 33fps, which doesn't look good on the vita, especially
 when panning the map. Created a 30 fps mode for the "authentic" experience, and 60fps 
 for the modern one (default). In 30fps, set the cpu to 111MHz in PSVShell for some 
@@ -44,10 +44,9 @@ so Castles and Battlefield don't have to be silent.
 
 ## Music
 
-- **Original:** the 11 tracks Palm Heroes names for its terrains, by Kevin MacLeod (CC-BY 4.0), in `music.zip` (also this repository's `data/palmheroes/`); they end up in `ux0:/data/palmheroes/Music/Original/`. The default.
+- **Original:** the 11 tracks Palm Heroes names for its terrains, by Kevin MacLeod (CC-BY 4.0), in `music.zip`.
 - **HoMM2:** put your own Heroes of Might and Magic II soundtrack in `ux0:/data/palmheroes/Music/HoMM2/`, named as its `README.txt` lists (GOG release). It adds town, battle and result themes.
 - **None:** the game's own sounds only, as on Windows Mobile.
-
 See Controls section below how to switch music sets in-game.
 
 ## Update
